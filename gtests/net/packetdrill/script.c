@@ -70,6 +70,7 @@ struct expression_type_entry expression_type_table[] = {
 	{ EXPR_POLLFD,                      "pollfd"                          },
 #if defined(__FreeBSD__)
 	{ EXPR_SF_HDTR,                     "sf_hdtr"                         },
+	{ EXPR_ACCEPT_FILTER,               "accept_filter"                   },
 	{ EXPR_TCP_FUNCTION_SET,            "tcp_function_set"                },
 #endif
 	{ EXPR_SCTP_RTOINFO,                "sctp_rtoinfo"                    },
@@ -333,6 +334,10 @@ void free_expression(struct expression *expression)
 		free_expression(expression->value.linger->l_linger);
 		break;
 #if defined(__FreeBSD__)
+	case EXPR_ACCEPT_FILTER:
+		assert(expression->value.accept_filter);
+		free_expression(expression->value.accept_filter->af_name);
+		break;
 	case EXPR_TCP_FUNCTION_SET:
 		assert(expression->value.tcp_function_set);
 		free_expression(expression->value.tcp_function_set->function_set_name);
@@ -2768,6 +2773,10 @@ static int evaluate(struct expression *in,
 		       sizeof(in->value.linger));
 		break;
 #if defined(__FreeBSD__)
+	case EXPR_ACCEPT_FILTER:		/* copy as-is */
+		memcpy(&out->value.accept_filter, &in->value.accept_filter,
+		       sizeof(in->value.accept_filter));
+		break;
 	case EXPR_TCP_FUNCTION_SET:		/* copy as-is */
 		memcpy(&out->value.tcp_function_set, &in->value.tcp_function_set,
 		       sizeof(in->value.tcp_function_set));
