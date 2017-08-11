@@ -376,6 +376,9 @@ struct int_symbol platform_symbols_table[] = {
 #if defined(TCP_FASTOPEN)
 	{ TCP_FASTOPEN,                     "TCP_FASTOPEN"                    },
 #endif
+#if defined(SO_ACCEPTFILTER)
+	{ SO_ACCEPTFILTER,                  "SO_ACCEPTFILTER"                 },
+#endif
 #if defined(TCP_FUNCTION_BLK)
 	{ TCP_FUNCTION_BLK,                 "TCP_FUNCTION_BLK"                },
 #endif

@@ -3706,6 +3706,7 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 	int script_fd, live_fd, level, optname, optval_s32, optlen, result;
 	void *optval = NULL;
 	struct expression *val_expression;
+	struct expression *len_expression;
 	struct linger linger;
 #ifdef SCTP_RTOINFO
 	struct sctp_rtoinfo rtoinfo;
@@ -3783,6 +3784,9 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 #ifdef SCTP_REMOTE_UDP_ENCAPS_PORT
 	struct sctp_udpencaps udpencaps;
 #endif
+#ifdef SO_ACCEPTFILTER
+	struct accept_filter_arg accept_filter_arg;
+#endif
 #ifdef TCP_FUNCTION_BLK
 	struct tcp_function_set tcp_function_set;
 #endif
@@ -3797,8 +3801,16 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 		return STATUS_ERR;
 	if (s32_arg(args, 2, &optname, error))
 		return STATUS_ERR;
-	if (s32_arg(args, 4, &optlen, error))
+
+	len_expression = get_arg(args, 4, error);
+	if (len_expression == NULL)
 		return STATUS_ERR;
+	if (len_expression->type == EXPR_ELLIPSIS) {
+		optlen = -1;
+	} else {
+		if (get_s32(len_expression, &optlen, error))
+			return STATUS_ERR;
+	}
 
 	val_expression = get_arg(args, 3, error);
 	if (val_expression == NULL)
@@ -4318,6 +4330,20 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 		optval = &udpencaps;
 		break;
 #endif
+#ifdef SO_ACCEPTFILTER
+	case EXPR_ACCEPT_FILTER:
+		if (check_type(val_expression->value.accept_filter->af_name, EXPR_STRING, error)) {
+			return STATUS_ERR;
+		}
+		bzero(&accept_filter_arg, sizeof(accept_filter_arg));
+		strncpy(accept_filter_arg.af_name,
+			val_expression->value.accept_filter->af_name->value.string,
+			16);
+		optval = &accept_filter_arg;
+		if (optlen == -1)
+			optlen = sizeof(accept_filter_arg);
+		break;
+#endif
 #ifdef TCP_FUNCTION_BLK
 	case EXPR_TCP_FUNCTION_SET:
 		if (check_type(val_expression->value.tcp_function_set->function_set_name, EXPR_STRING, error)) {
@@ -4331,6 +4357,8 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 			return STATUS_ERR;
 		}
 		optval = &tcp_function_set;
+		if (optlen == -1)
+			optlen = sizeof(tcp_function_set);
 		break;
 #endif
 	default:
@@ -4340,6 +4368,11 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 		break;
 	}
 	assert(optval != NULL);
+
+	if (optlen == -1) {
+		asprintf(error, "optlen must be specified for this optname");
+		return STATUS_ERR;
+	}
 
 	begin_syscall(state, syscall);
 
