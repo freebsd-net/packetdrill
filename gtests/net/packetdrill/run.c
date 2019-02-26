@@ -87,9 +87,10 @@ struct state *state_new(struct config *config,
 			struct netdev *netdev)
 {
 	struct state *state = calloc(1, sizeof(struct state));
+	int err;
 
-	if (pthread_mutex_init(&state->mutex, NULL) != 0)
-		die_perror("pthread_mutex_init");
+	if ((err = pthread_mutex_init(&state->mutex, NULL)) != 0)
+		die_strerror("pthread_mutex_init", err);
 
 	run_lock(state);
 
@@ -146,6 +147,10 @@ static void close_all_sockets(struct state *state)
 
 void state_free(struct state *state, int about_to_die)
 {
+	int err;
+
+	/* This MUST NOT be called from the system call thread. */
+	assert(!pthread_equal(pthread_self(), state->syscalls->thread));
 	/* We have to stop the system call thread first, since it's using
 	 * sockets that we want to close and reset.
 	 */
@@ -162,8 +167,8 @@ void state_free(struct state *state, int about_to_die)
 	code_free(state->code);
 
 	run_unlock(state);
-	if (pthread_mutex_destroy(&state->mutex) != 0)
-		die_perror("pthread_mutex_destroy");
+	if ((err = pthread_mutex_destroy(&state->mutex)) != 0)
+		die_strerror("pthread_mutex_destroy", err);
 
 	memset(state, 0, sizeof(*state));  /* paranoia to help catch bugs */
 	free(state);
@@ -480,7 +485,7 @@ void lock_memory(void)
 {
 #if !defined(__APPLE__)
 	if (mlockall(MCL_CURRENT | MCL_FUTURE))
-		die_perror("lockall(MCL_CURRENT | MCL_FUTURE)");
+		die_perror("mlockall(MCL_CURRENT | MCL_FUTURE)");
 #endif
 }
 

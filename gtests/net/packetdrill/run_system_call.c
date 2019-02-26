@@ -84,7 +84,7 @@ static int parse_expression_to_sctp_initmsg(struct expression *expr, struct sctp
 static int parse_expression_to_sctp_sndrcvinfo(struct expression *expr, struct sctp_sndrcvinfo *info,
 					       bool send, char **error);
 #endif
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int parse_expression_to_sctp_sndinfo(struct expression *expr, struct sctp_sndinfo *info,
 				            char **error);
 static int parse_expression_to_sctp_prinfo(struct expression *expr, struct sctp_prinfo *info,
@@ -104,11 +104,11 @@ static int check_sctp_initmsg(struct sctp_initmsg_expr *expr, struct sctp_initms
 static int check_sctp_extrcvinfo(struct sctp_extrcvinfo_expr *expr, struct sctp_extrcvinfo *sctp_info,
 				 char **error);
 #endif
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int check_sctp_rcvinfo(struct sctp_rcvinfo_expr *expr, struct sctp_rcvinfo *sctp_rcvinfo,
 				 char** error);
 #endif
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int check_sctp_nxtinfo(struct sctp_nxtinfo_expr *expr, struct sctp_nxtinfo *sctp_nxtinfo,
 			      char **error);
 #endif
@@ -402,7 +402,7 @@ static int get_sctp_assoc_t(struct expression *expression,
 			    sctp_assoc_t *value, char **error)
 {
 	if (expression->type == EXPR_ELLIPSIS) {
-		value = 0;
+		*value = 0;
 	} else {
 		if (check_type(expression, EXPR_INTEGER, error))
 			return STATUS_ERR;
@@ -584,7 +584,7 @@ static int s32_bracketed_arg(struct expression_list *args,
 /* Return the value of the argument with the given index, and verify
  * that it has the expected type: a list with a single integer.
  */
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int u32_bracketed_arg(struct expression_list *args,
 			     int index, u32 *value, char **error)
 {
@@ -1647,13 +1647,15 @@ static int pollfds_check(struct expression *fds_expression,
  */
 static void begin_syscall(struct state *state, struct syscall_spec *syscall)
 {
+	int err;
+
 	if (is_blocking_syscall(syscall)) {
 		assert(state->syscalls->state == SYSCALL_ENQUEUED);
 		state->syscalls->state = SYSCALL_RUNNING;
 		run_unlock(state);
 		DEBUGP("syscall thread: begin_syscall signals dequeued\n");
-		if (pthread_cond_signal(&state->syscalls->dequeued) != 0)
-			die_perror("pthread_cond_signal");
+		if ((err = pthread_cond_signal(&state->syscalls->dequeued)) != 0)
+			die_strerror("pthread_cond_signal", err);
 	}
 }
 
@@ -4630,7 +4632,7 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 		if (check_type(val_expression->value.accept_filter_arg->af_name, EXPR_STRING, error)) {
 			return STATUS_ERR;
 		}
-		strncpy(accept_filter_arg.af_name,
+		strlcpy(accept_filter_arg.af_name,
 			val_expression->value.accept_filter_arg->af_name->value.string,
 			offsetof(struct accept_filter_arg, af_arg));
 		if (val_expression->value.accept_filter_arg->af_arg != NULL &&
@@ -4638,7 +4640,7 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 			if (check_type(val_expression->value.accept_filter_arg->af_arg, EXPR_STRING, error)) {
 				return STATUS_ERR;
 			}
-			strncpy(accept_filter_arg.af_arg,
+			strlcpy(accept_filter_arg.af_arg,
 				val_expression->value.accept_filter_arg->af_arg->value.string,
 				sizeof(struct accept_filter_arg) - offsetof(struct accept_filter_arg, af_arg));
 		}
@@ -4653,7 +4655,7 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 		if (check_type(val_expression->value.tcp_function_set->function_set_name, EXPR_STRING, error)) {
 			return STATUS_ERR;
 		}
-		strncpy(tcp_function_set.function_set_name,
+		strlcpy(tcp_function_set.function_set_name,
 		        val_expression->value.tcp_function_set->function_set_name->value.string,
 		        TCP_FUNCTION_NAME_LEN_MAX);
 		if (get_u32(val_expression->value.tcp_function_set->pcbcnt,
@@ -5347,7 +5349,7 @@ static int parse_expression_to_sctp_sndrcvinfo(struct expression *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int parse_expression_to_sctp_sndinfo(struct expression *expr, struct sctp_sndinfo *info, char **error) {
 	if (expr->type == EXPR_SCTP_SNDINFO) {
 		struct sctp_sndinfo_expr *sndinfo_expr = expr->value.sctp_sndinfo;
@@ -5436,7 +5438,7 @@ static int parse_expression_to_sctp_sendv_spa(struct expression *expr, struct sc
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int get_sockaddr_from_list(struct expression *expr, size_t *addr_size, struct sockaddr **addrs, char **error) {
 	if (expr->type == EXPR_LIST) {
 		struct expression_list *addrs_expr_list = (struct expression_list *)expr->value.list;
@@ -5627,7 +5629,7 @@ static int syscall_sctp_sendv(struct state *state, struct syscall_spec *syscall,
 			      struct expression_list *args,
 			      char **error)
 {
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 	int script_fd, live_fd, iovcnt, addrcnt, result, flags;
 	u32 infotype;
 	size_t script_iovec_list_len = 0;
@@ -5747,7 +5749,7 @@ error_out:
 #endif
 }
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int check_sctp_rcvinfo(struct sctp_rcvinfo_expr *expr,
 			      struct sctp_rcvinfo *sctp_rcvinfo,
 			      char **error)
@@ -5777,7 +5779,7 @@ static int check_sctp_rcvinfo(struct sctp_rcvinfo_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int check_sctp_nxtinfo(struct sctp_nxtinfo_expr *expr,
 			      struct sctp_nxtinfo *sctp_nxtinfo,
 			      char **error)
@@ -6349,7 +6351,7 @@ static int check_sctp_notification(struct socket *socket,
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 static int check_sctp_recvv_rn(struct sctp_recvv_rn_expr *expr,
 			       struct sctp_recvv_rn *sctp_recvv_rn,
 			       char **error)
@@ -6376,7 +6378,7 @@ static int syscall_sctp_recvv(struct state *state, struct syscall_spec *syscall,
 			      struct expression_list *args,
 			      char **error)
 {
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 	int flags, iovlen, script_fd, live_fd, result;
 	size_t script_iovec_list_len = 0;
 	unsigned int infotype = 0;
@@ -6931,14 +6933,13 @@ struct system_call_entry system_call_table[] = {
 static void invoke_system_call(
 	struct state *state, struct event *event, struct syscall_spec *syscall)
 {
-	DEBUGP("%d: invoke call: %s\n", event->line_number, syscall->name);
-
 	char *error = NULL, *script_path = NULL;
 	const char *name = syscall->name;
 	struct expression_list *args = NULL;
 	int i = 0;
 	int result = 0;
 
+	DEBUGP("%d: invoke call: %s\n", event->line_number, syscall->name);
 	/* Wait for the right time before firing off this event. */
 	wait_for_event(state);
 
@@ -7002,12 +7003,12 @@ static int await_idle_thread(struct state *state)
 		}
 		/* Wait for a signal or our timeout end_time to arrive. */
 		DEBUGP("main thread: awaiting idle syscall thread\n");
-		int status = pthread_cond_timedwait(&state->syscalls->idle,
-						    &state->mutex, &end_time);
-		if (status == ETIMEDOUT)
+		int err = pthread_cond_timedwait(&state->syscalls->idle,
+						 &state->mutex, &end_time);
+		if (err == ETIMEDOUT)
 			return STATUS_ERR;
-		else if (status != 0)
-			die_perror("pthread_cond_timedwait");
+		else if (err != 0)
+			die_strerror("pthread_cond_timedwait", err);
 	}
 	return STATUS_OK;
 }
@@ -7034,8 +7035,11 @@ static void enqueue_system_call(
 	struct state *state, struct event *event, struct syscall_spec *syscall)
 {
 	char *error = NULL, *script_path = NULL;
+	int err;
 	bool done = false;
 
+	/* This MUST NOT be called from the system call thread. */
+	assert(!pthread_equal(pthread_self(), state->syscalls->thread));
 	/* Wait if there are back-to-back blocking system calls. */
 	if (await_idle_thread(state)) {
 		asprintf(&error, "blocking system call while another blocking "
@@ -7046,16 +7050,16 @@ static void enqueue_system_call(
 	/* Enqueue the system call info and wake up the syscall thread. */
 	DEBUGP("main thread: signal enqueued\n");
 	state->syscalls->state = SYSCALL_ENQUEUED;
-	if (pthread_cond_signal(&state->syscalls->enqueued) != 0)
-		die_perror("pthread_cond_signal");
+	if ((err = pthread_cond_signal(&state->syscalls->enqueued)) != 0)
+		die_strerror("pthread_cond_signal", err);
 
 	/* Wait for the syscall thread to dequeue and start the system call. */
 	while (state->syscalls->state == SYSCALL_ENQUEUED) {
 		DEBUGP("main thread: waiting for dequeued signal; "
 		       "state: %d\n", state->syscalls->state);
-		if (pthread_cond_wait(&state->syscalls->dequeued,
-				      &state->mutex) != 0) {
-			die_perror("pthread_cond_wait");
+		if ((err = pthread_cond_wait(&state->syscalls->dequeued,
+					     &state->mutex)) != 0) {
+			die_strerror("pthread_cond_wait", err);
 		}
 	}
 
@@ -7127,6 +7131,7 @@ static void *system_call_thread(void *arg)
 	char *error = NULL;
 	struct event *event = NULL;
 	struct syscall_spec *syscall = NULL;
+	int err;
 	bool done = false;
 
 #if defined(__FreeBSD__)
@@ -7156,9 +7161,9 @@ static void *system_call_thread(void *arg)
 		switch (state->syscalls->state) {
 		case SYSCALL_IDLE:
 			DEBUGP("syscall thread: waiting\n");
-			if (pthread_cond_wait(&state->syscalls->enqueued,
-					      &state->mutex)) {
-				die_perror("pthread_cond_wait");
+			if ((err = pthread_cond_wait(&state->syscalls->enqueued,
+						     &state->mutex))) {
+				die_strerror("pthread_cond_wait", err);
 			}
 			break;
 
@@ -7190,10 +7195,10 @@ static void *system_call_thread(void *arg)
 			/* Check end time for the blocking system call. */
 			assert(state->syscalls->live_end_usecs >= 0);
 			if (verify_time(state,
-						event->time_type,
-						syscall->end_usecs, 0,
-						state->syscalls->live_end_usecs,
-						"system call return", &error)) {
+					event->time_type,
+					syscall->end_usecs, 0,
+					state->syscalls->live_end_usecs,
+					"system call return", &error)) {
 				die("%s:%d: %s\n",
 				    state->config->script_path,
 				    event->line_number,
@@ -7209,8 +7214,8 @@ static void *system_call_thread(void *arg)
 			state->syscalls->event = NULL;
 			state->syscalls->live_end_usecs = -1;
 			DEBUGP("syscall thread: now idle\n");
-			if (pthread_cond_signal(&state->syscalls->idle) != 0)
-				die_perror("pthread_cond_signal");
+			if ((err = pthread_cond_signal(&state->syscalls->idle)) != 0)
+				die_strerror("pthread_cond_signal", err);
 			break;
 
 		case SYSCALL_EXITING:
@@ -7228,18 +7233,19 @@ static void *system_call_thread(void *arg)
 struct syscalls *syscalls_new(struct state *state)
 {
 	struct syscalls *syscalls = calloc(1, sizeof(struct syscalls));
+	int err;
 
 	syscalls->state = SYSCALL_IDLE;
 
-	if (pthread_create(&syscalls->thread, NULL, system_call_thread,
-			   state) != 0) {
-		die_perror("pthread_create");
+	if ((err = pthread_create(&syscalls->thread, NULL, system_call_thread,
+				  state)) != 0) {
+		die_strerror("pthread_create", err);
 	}
 
-	if ((pthread_cond_init(&syscalls->idle, NULL) != 0) ||
-	    (pthread_cond_init(&syscalls->enqueued, NULL) != 0) ||
-	    (pthread_cond_init(&syscalls->dequeued, NULL) != 0)) {
-		die_perror("pthread_cond_init");
+	if (((err = pthread_cond_init(&syscalls->idle, NULL)) != 0) ||
+	    ((err = pthread_cond_init(&syscalls->enqueued, NULL)) != 0) ||
+	    ((err = pthread_cond_init(&syscalls->dequeued, NULL)) != 0)) {
+		die_strerror("pthread_cond_init", err);
 	}
 
 	return syscalls;
@@ -7247,7 +7253,7 @@ struct syscalls *syscalls_new(struct state *state)
 
 void syscalls_free(struct state *state, struct syscalls *syscalls, int about_to_die)
 {
-	int status;
+	int status, err;
 
 	/* Wait a bit for the thread to go idle. */
 	status = await_idle_thread(state);
@@ -7266,21 +7272,21 @@ void syscalls_free(struct state *state, struct syscalls *syscalls, int about_to_
 		/* Send a request to terminate the thread. */
 		DEBUGP("main thread: signaling syscall thread to exit\n");
 		syscalls->state = SYSCALL_EXITING;
-		if (pthread_cond_signal(&syscalls->enqueued) != 0)
-			die_perror("pthread_cond_signal");
+		if ((err = pthread_cond_signal(&syscalls->enqueued)) != 0)
+			die_strerror("pthread_cond_signal", err);
 	}
 	/* Release the lock briefly and wait for syscall thread to finish. */
 	run_unlock(state);
 	DEBUGP("main thread: unlocking, waiting for syscall thread exit\n");
 	void *thread_result = NULL;
-	if (pthread_join(syscalls->thread, &thread_result) != 0)
-		die_perror("pthread_cancel");
+	if ((err = pthread_join(syscalls->thread, &thread_result)) != 0)
+		die_strerror("pthread_join", err);
 	DEBUGP("main thread: joined syscall thread; relocking\n");
 	run_lock(state);
-	if ((pthread_cond_destroy(&syscalls->idle) != 0) ||
-	    (pthread_cond_destroy(&syscalls->enqueued) != 0) ||
-	    (pthread_cond_destroy(&syscalls->dequeued) != 0)) {
-		die_perror("pthread_cond_destroy");
+	if (((err = pthread_cond_destroy(&syscalls->idle)) != 0) ||
+	    ((err = pthread_cond_destroy(&syscalls->enqueued)) != 0) ||
+	    ((err = pthread_cond_destroy(&syscalls->dequeued)) != 0)) {
+		die_strerror("pthread_cond_destroy", err);
 	}
 
 	memset(syscalls, 0, sizeof(*syscalls));  /* to help catch bugs */
