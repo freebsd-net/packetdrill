@@ -77,8 +77,10 @@ struct sctp_tlv {
 };
 #endif
 #if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(MSG_NOTIFICATION)
 static int check_sctp_notification(struct socket *socket, struct iovec *iov, struct expression *iovec_expr,
 				   char **error);
+#endif
 static int parse_expression_to_sctp_initmsg(struct expression *expr, struct sctp_initmsg *init,
 				            char **error);
 static int parse_expression_to_sctp_sndrcvinfo(struct expression *expr, struct sctp_sndrcvinfo *info,
@@ -2458,7 +2460,7 @@ static int syscall_recvmsg(struct state *state, struct syscall_spec *syscall,
 			 expected_msg_flags, msg->msg_flags);
 		goto error_out;
 	}
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 	if (msg->msg_flags & MSG_NOTIFICATION) {
 		struct socket *socket = find_socket_by_script_fd(state, script_fd);
 		if (check_sctp_notification(socket, msg->msg_iov, msg_expression->value.msghdr->msg_iov, error))
@@ -5804,7 +5806,7 @@ static int check_sctp_nxtinfo(struct sctp_nxtinfo_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_assoc_change(struct sctp_assoc_change_expr *expr,
 				   struct sctp_assoc_change *sctp_event,
 				   char **error) {
@@ -5845,7 +5847,7 @@ static int check_sctp_assoc_change(struct sctp_assoc_change_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_paddr_change(struct sctp_paddr_change_expr *expr,
 				   struct sctp_paddr_change *sctp_event,
 				   char **error) {
@@ -5875,7 +5877,7 @@ static int check_sctp_paddr_change(struct sctp_paddr_change_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_remote_error(struct sctp_remote_error_expr *expr,
 				   struct sctp_remote_error *sctp_event,
 				   char **error) {
@@ -5907,7 +5909,7 @@ static int check_sctp_remote_error(struct sctp_remote_error_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_send_failed(struct sctp_send_failed_expr *expr,
 				  struct sctp_send_failed *sctp_event,
 				  char **error) {
@@ -5945,7 +5947,7 @@ static int check_sctp_send_failed(struct sctp_send_failed_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_shutdown_event(struct sctp_shutdown_event_expr *expr,
 				     struct sctp_shutdown_event *sctp_event,
 				     char **error) {
@@ -5967,7 +5969,7 @@ static int check_sctp_shutdown_event(struct sctp_shutdown_event_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_adaptation_event(struct sctp_adaptation_event_expr *expr,
 				       struct sctp_adaptation_event *sctp_event,
 				       char **error) {
@@ -5992,7 +5994,7 @@ static int check_sctp_adaptation_event(struct sctp_adaptation_event_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_pdapi_event(struct sctp_pdapi_event_expr *expr,
 				  struct sctp_pdapi_event *sctp_event,
 				  char **error) {
@@ -6037,7 +6039,7 @@ static int check_sctp_pdapi_event(struct sctp_pdapi_event_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP))
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION))
 static int check_sctp_authkey_event(struct sctp_authkey_event_expr *expr,
 				     struct sctp_authkey_event *sctp_event,
 				     char **error) {
@@ -6065,7 +6067,7 @@ static int check_sctp_authkey_event(struct sctp_authkey_event_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_sender_dry_event(struct sctp_sender_dry_event_expr *expr,
 				       struct sctp_sender_dry_event *sctp_event,
 				       char **error) {
@@ -6087,7 +6089,7 @@ static int check_sctp_sender_dry_event(struct sctp_sender_dry_event_expr *expr,
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_send_failed_event(struct sctp_send_failed_event_expr *expr,
 				       struct sctp_send_failed_event *sctp_event,
 				       char **error) {
@@ -6119,7 +6121,7 @@ static int check_sctp_send_failed_event(struct sctp_send_failed_event_expr *expr
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_tlv(struct sctp_tlv_expr *expr, struct sctp_tlv *sctp_tlv, char **error) {
 	if (check_u16_expr(expr->sn_type, sctp_tlv->sn_type,
 			   "sctp_tlv.sn_type", error))
@@ -6134,7 +6136,7 @@ static int check_sctp_tlv(struct sctp_tlv_expr *expr, struct sctp_tlv *sctp_tlv,
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP))
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION))
 static int check_sctp_stream_reset_event(struct sctp_stream_reset_event_expr *expr,
 					 struct sctp_stream_reset_event *sctp_stream_reset_event,
 					 char **error) {
@@ -6159,7 +6161,7 @@ static int check_sctp_stream_reset_event(struct sctp_stream_reset_event_expr *ex
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP))
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION))
 static int check_sctp_assoc_reset_event(struct socket *socket, struct sctp_assoc_reset_event_expr *expr,
 					struct sctp_assoc_reset_event *sctp_assoc_reset_event,
 					char **error) {
@@ -6193,7 +6195,7 @@ static int check_sctp_assoc_reset_event(struct socket *socket, struct sctp_assoc
 }
 #endif
 
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP))
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION))
 static int check_sctp_stream_change_event(struct sctp_stream_change_event_expr *expr,
 					  struct sctp_stream_change_event *sctp_stream_change_event,
 					  char **error) {
@@ -6220,7 +6222,7 @@ static int check_sctp_stream_change_event(struct sctp_stream_change_event_expr *
 }
 #endif
 
-#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11)
+#if defined(__FreeBSD__) || defined(linux) || (defined(__APPLE__) && defined(HAVE_SCTP) && defined(MSG_NOTIFICATION)) || defined(__SunOS_5_11)
 static int check_sctp_notification(struct socket *socket,
 				   struct iovec *iov,
 				   struct expression *iovec_expr,
@@ -6522,10 +6524,12 @@ static int syscall_sctp_recvv(struct state *state, struct syscall_spec *syscall,
 			asprintf(error, "sctp_recvv flags bad return value. expected %d, actual %d",
 				 script_flags, flags);
 			goto error_out;
+#if defined(MSG_NOTIFICATION)
 		} else if (flags & MSG_NOTIFICATION) {
 			 struct socket *socket = find_socket_by_script_fd(state, script_fd);
 			if (check_sctp_notification(socket, iov, iovec_expr_list, error))
 				goto error_out;
+#endif
 		}
 	}
 	free(from);
