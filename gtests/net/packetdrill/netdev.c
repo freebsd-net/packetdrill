@@ -186,7 +186,11 @@ static void create_device(struct config *config, struct local_netdev *netdev)
 	if (config->tun_device != NULL) {
 		asprintf(&tun_path, "%s/%s", TUN_DIR, config->tun_device);
 	} else {
+#if defined(__FreeBSD__)
 		asprintf(&tun_path, "%s/%s", TUN_DIR, "tun");
+#else
+		asprintf(&tun_path, "%s/%s", TUN_DIR, "tun0");
+#endif
 	}
 #endif
 #if defined(linux)
@@ -562,8 +566,11 @@ int netdev_receive_loop(struct packet_socket *psock,
 
 		/* Sniff the next outbound packet from the kernel under test. */
 		if (packet_socket_receive(psock, direction, &ether_type,
-					  *packet, &in_bytes))
+					  *packet, &in_bytes)) {
+			packet_free(*packet);
+			*packet = NULL;
 			continue;
+		}
 
 		++*num_packets;
 		result = parse_packet(*packet, in_bytes, ether_type, udp_encaps,

@@ -24,6 +24,7 @@
 
 #include "script.h"
 
+#include <ctype.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <stdlib.h>
@@ -108,6 +109,7 @@ struct expression_type_entry expression_type_table[] = {
 	{ EXPR_ELLIPSIS,                    "ellipsis"                        },
 	{ EXPR_INTEGER,                     "integer"                         },
 	{ EXPR_WORD,                        "word"                            },
+	{ EXPR_HEX_WORD,                    "hex word"                        },
 	{ EXPR_STRING,                      "string"                          },
 	{ EXPR_SOCKET_ADDRESS_IPV4,         "sockaddr_in"                     },
 	{ EXPR_SOCKET_ADDRESS_IPV6,         "sockaddr_in6"                    },
@@ -124,6 +126,7 @@ struct expression_type_entry expression_type_table[] = {
 #if defined(__FreeBSD__)
 	{ EXPR_SF_HDTR,                     "sf_hdtr"                         },
 	{ EXPR_TCP_FUNCTION_SET,            "tcp_function_set"                },
+	{ EXPR_TCP_FASTOPEN,                "tcp_fastopen"                    },
 #endif
 	{ EXPR_SCTP_RTOINFO,                "sctp_rtoinfo"                    },
 	{ EXPR_SCTP_INITMSG,                "sctp_initmsg"                    },
@@ -370,6 +373,34 @@ static int unescape_cstring_expression(const char *input_string,
 	return STATUS_OK;
 }
 
+static int hex_word_expression(const char *input_string,
+			       struct expression *out, char **error)
+{
+	size_t bytes = strlen(input_string) + 1;
+	out->type = EXPR_HEX_WORD;
+	out->value.string = (char *)malloc(bytes);
+	const char *c_in = input_string;
+	char *c_out = out->value.string;
+
+	if ((bytes - 1)% 2) {
+		asprintf(error, "odd number of hexadecimal digits: %zu", bytes);
+		return STATUS_ERR;
+	}
+	while (*c_in != '\0') {
+		if (isxdigit(*c_in)) {
+			*c_out = toupper(*c_in);
+		} else {
+			asprintf(error, "unsupported hexadecimal digit: '%c'",
+				 *c_in);
+			return STATUS_ERR;
+		}
+		++c_in;
+		++c_out;
+	}
+	*c_out = *c_in;
+	return STATUS_OK;
+}
+
 void free_expression(struct expression *expression)
 {
 	if (expression == NULL)
@@ -402,6 +433,12 @@ void free_expression(struct expression *expression)
 		free_expression(expression->value.tcp_function_set->function_set_name);
 		free_expression(expression->value.tcp_function_set->pcbcnt);
 		free(expression->value.tcp_function_set);
+		break;
+	case EXPR_TCP_FASTOPEN:
+		assert(expression->value.tcp_fastopen);
+		free_expression(expression->value.tcp_fastopen->enable);
+		free_expression(expression->value.tcp_fastopen->psk);
+		free(expression->value.tcp_fastopen);
 		break;
 #endif
 	case EXPR_SCTP_RTOINFO:
@@ -818,6 +855,10 @@ void free_expression(struct expression *expression)
 		assert(expression->value.string);
 		free(expression->value.string);
 		break;
+	case EXPR_HEX_WORD:
+		assert(expression->value.string);
+		free(expression->value.string);
+		break;
 	case EXPR_STRING:
 		assert(expression->value.string);
 		free(expression->value.string);
@@ -1122,7 +1163,7 @@ static int evaluate_tcp_function_set_expression(struct expression *in,
 	assert(in->value.tcp_function_set);
 	assert(out->type == EXPR_TCP_FUNCTION_SET);
 
-	out->value.sf_hdtr = calloc(1, sizeof(struct tcp_function_set_expr));
+	out->value.tcp_function_set = calloc(1, sizeof(struct tcp_function_set_expr));
 
 	in_tcp_function_set = in->value.tcp_function_set;
 	out_tcp_function_set = out->value.tcp_function_set;
@@ -1133,6 +1174,34 @@ static int evaluate_tcp_function_set_expression(struct expression *in,
 		return STATUS_ERR;
 	if (evaluate(in_tcp_function_set->pcbcnt,
 		     &out_tcp_function_set->pcbcnt,
+		     error))
+		return STATUS_ERR;
+
+	return STATUS_OK;
+}
+
+static int evaluate_tcp_fastopen_expression(struct expression *in,
+						struct expression *out,
+						char **error)
+{
+	struct tcp_fastopen_expr *in_tcp_fastopen;
+	struct tcp_fastopen_expr *out_tcp_fastopen;
+
+	assert(in->type == EXPR_TCP_FASTOPEN);
+	assert(in->value.tcp_fastopen);
+	assert(out->type == EXPR_TCP_FASTOPEN);
+
+	out->value.tcp_fastopen = calloc(1, sizeof(struct tcp_fastopen_expr));
+
+	in_tcp_fastopen = in->value.tcp_fastopen;
+	out_tcp_fastopen = out->value.tcp_fastopen;
+
+	if (evaluate(in_tcp_fastopen->enable,
+		     &out_tcp_fastopen->enable,
+		     error))
+		return STATUS_ERR;
+	if (evaluate(in_tcp_fastopen->psk,
+		     &out_tcp_fastopen->psk,
 		     error))
 		return STATUS_ERR;
 
@@ -1563,7 +1632,7 @@ static int evaluate_sctp_event_expression(struct expression *in,
 		    error))
 		return STATUS_ERR;
 
-	return STATUS_OK; 
+	return STATUS_OK;
 }
 
 static int evaluate_sctp_event_subscribe_expression(struct expression *in,
@@ -1721,10 +1790,10 @@ static int evaluate_sctp_setprim_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_SETPRIM);
 
         out->value.sctp_setprim = calloc(1, sizeof(struct sctp_setprim_expr));
-                     
+
         in_prim = in->value.sctp_setprim;
         out_prim = out->value.sctp_setprim;
-                     
+
         if (evaluate(in_prim->ssp_assoc_id,
 		     &out_prim->ssp_assoc_id,
 		     error))
@@ -1749,10 +1818,10 @@ static int evaluate_sctp_setadaptation_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_SETADAPTATION);
 
         out->value.sctp_setadaptation = calloc(1, sizeof(struct sctp_setadaptation_expr));
-                     
+
         in_adaptation = in->value.sctp_setadaptation;
         out_adaptation = out->value.sctp_setadaptation;
-                     
+
         if (evaluate(in_adaptation->ssb_adaptation_ind,
 		     &out_adaptation->ssb_adaptation_ind,
 		     error))
@@ -1773,10 +1842,10 @@ static int evaluate_sctp_sndrcvinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_SNDRCVINFO);
 
         out->value.sctp_sndrcvinfo = calloc(1, sizeof(struct sctp_sndrcvinfo_expr));
-                     
+
         in_info = in->value.sctp_sndrcvinfo;
         out_info = out->value.sctp_sndrcvinfo;
-                     
+
         if (evaluate(in_info->sinfo_stream,
 		     &out_info->sinfo_stream,
 		     error))
@@ -1829,10 +1898,10 @@ static int evaluate_sctp_prinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_PRINFO);
 
         out->value.sctp_prinfo = calloc(1, sizeof(struct sctp_prinfo_expr));
-                     
+
         in_info = in->value.sctp_prinfo;
         out_info = out->value.sctp_prinfo;
-                     
+
         if (evaluate(in_info->pr_policy,
 		     &out_info->pr_policy,
 		     error))
@@ -1842,7 +1911,7 @@ static int evaluate_sctp_prinfo_expression(struct expression *in,
 		     error))
 		return STATUS_ERR;
 
-	return STATUS_OK;	
+	return STATUS_OK;
 }
 
 static int evaluate_sctp_default_prinfo_expression(struct expression *in,
@@ -1857,10 +1926,10 @@ static int evaluate_sctp_default_prinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_DEFAULT_PRINFO);
 
         out->value.sctp_default_prinfo = calloc(1, sizeof(struct sctp_default_prinfo_expr));
-                     
+
         in_info = in->value.sctp_default_prinfo;
         out_info = out->value.sctp_default_prinfo;
-                     
+
         if (evaluate(in_info->pr_policy,
 		     &out_info->pr_policy,
 		     error))
@@ -1874,7 +1943,7 @@ static int evaluate_sctp_default_prinfo_expression(struct expression *in,
 		     error))
 		return STATUS_ERR;
 
-	return STATUS_OK;	
+	return STATUS_OK;
 }
 
 static int evaluate_sctp_authinfo_expression(struct expression *in,
@@ -1889,10 +1958,10 @@ static int evaluate_sctp_authinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_AUTHINFO);
 
         out->value.sctp_authinfo = calloc(1, sizeof(struct sctp_authinfo_expr));
-                     
+
         in_info = in->value.sctp_authinfo;
         out_info = out->value.sctp_authinfo;
-                     
+
         if (evaluate(in_info->auth_keynumber,
 		     &out_info->auth_keynumber,
 		     error))
@@ -1913,10 +1982,10 @@ static int evaluate_sctp_sendv_spa_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_SENDV_SPA);
 
         out->value.sctp_sendv_spa = calloc(1, sizeof(struct sctp_sendv_spa_expr));
-                     
+
         in_spa = in->value.sctp_sendv_spa;
         out_spa = out->value.sctp_sendv_spa;
-                     
+
         if (evaluate(in_spa->sendv_flags,
 		     &out_spa->sendv_flags,
 		     error))
@@ -1949,10 +2018,10 @@ static int evaluate_sctp_rcvinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_RCVINFO);
 
         out->value.sctp_rcvinfo = calloc(1, sizeof(struct sctp_rcvinfo_expr));
-                     
+
         in_info = in->value.sctp_rcvinfo;
         out_info = out->value.sctp_rcvinfo;
-                     
+
         if (evaluate(in_info->rcv_sid,
 		     &out_info->rcv_sid,
 		     error))
@@ -2001,10 +2070,10 @@ static int evaluate_sctp_nxtinfo_expression(struct expression *in,
         assert(out->type == EXPR_SCTP_NXTINFO);
 
         out->value.sctp_nxtinfo = calloc(1, sizeof(struct sctp_nxtinfo_expr));
-                     
+
         in_info = in->value.sctp_nxtinfo;
         out_info = out->value.sctp_nxtinfo;
-                     
+
         if (evaluate(in_info->nxt_sid,
 		     &out_info->nxt_sid,
 		     error))
@@ -3016,6 +3085,9 @@ static int evaluate(struct expression *in,
 	case EXPR_TCP_FUNCTION_SET:
 		result = evaluate_tcp_function_set_expression(in, out, error);
 		break;
+	case EXPR_TCP_FASTOPEN:
+		result = evaluate_tcp_fastopen_expression(in, out, error);
+		break;
 #endif
 	case EXPR_SCTP_RTOINFO:
 		result = evaluate_sctp_rtoinfo_expression(in, out, error);
@@ -3033,10 +3105,10 @@ static int evaluate(struct expression *in,
 		result = evaluate_sctp_assoc_value_expression(in, out, error);
 		break;
 	case EXPR_SCTP_AUTHKEYID:
-		result = evaluate_sctp_authkeyid_expression(in, out, error);	
+		result = evaluate_sctp_authkeyid_expression(in, out, error);
 		break;
 	case EXPR_SCTP_SACKINFO:
-		result = evaluate_sctp_sack_info_expression(in, out, error);	
+		result = evaluate_sctp_sack_info_expression(in, out, error);
 		break;
 	case EXPR_SCTP_PADDRINFO:
 		result = evaluate_sctp_paddrinfo_expression(in, out, error);
@@ -3162,6 +3234,10 @@ static int evaluate(struct expression *in,
 		out->type = EXPR_INTEGER;
 		if (symbol_to_int(in->value.string,
 				  &out->value.num, error))
+			return STATUS_ERR;
+		break;
+	case EXPR_HEX_WORD:
+		if (hex_word_expression(in->value.string, out, error))
 			return STATUS_ERR;
 		break;
 	case EXPR_STRING:

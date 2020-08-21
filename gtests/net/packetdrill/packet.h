@@ -28,7 +28,9 @@
 
 #include "types.h"
 
+#include <stddef.h>
 #include <sys/time.h>
+
 #include "assert.h"
 #include "gre.h"
 #include "header.h"
@@ -116,6 +118,7 @@ struct packet {
 #define FLAGS_UDP_ENCAPSULATED    0x80 /* TCP/UDP or SCTP/UDP encapsulated */
 #define FLAG_IGNORE_TS_VAL        0x100 /* set to ignore processing of TS val */
 #define FLAG_IGNORE_SEQ           0x200 /* set to ignore processing of sequence numbers */
+#define FLAG_PARSE_ACE            0x400 /* output parsed AccECN ACE field */
 
 	enum ip_ecn_t ecn;	/* IPv4/IPv6 ECN treatment for packet */
 
@@ -421,7 +424,7 @@ static inline u32 *packet_echoed_sctp_v_tag(struct packet *packet, bool encapsul
 {
 	struct sctp_common_header *echoed_sctp = packet_echoed_sctp_header(packet, encapsulated);
 	assert(echoed_sctp);
-	u32 *v_tag = &(echoed_sctp->v_tag);
+	u32 *v_tag = (u32 *)((char *)echoed_sctp + offsetof(struct sctp_common_header, v_tag));
 	/* Check that the v_tag field is actually in the space we
 	 * reserved for the echoed prefix of the SCTP common header.
 	 */

@@ -121,11 +121,15 @@ static int check_sctp_sndrcvinfo(struct sctp_sndrcvinfo_expr *expr,
 #endif
 
 #if defined(linux)
-/* Provide a wrapper for the Linux gettid() system call (glibc does not). */
+/* Provide a wrapper for the Linux gettid() system call
+ * (glibc only provides it in version 2.30 or higher).
+ */
+#if (__GLIBC__ < 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 30))
 static pid_t gettid(void)
 {
 	return syscall(__NR_gettid);
 }
+#endif
 
 /* Read a whole file into the given buffer of the given length. */
 static void read_whole_file(const char *path, char *buffer, int max_bytes)
@@ -1203,7 +1207,7 @@ static int cmsg_new(struct expression *expression,
 			break;
 		}
 #endif
-#if defined(SCTP_SNDINFO)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 		case EXPR_SCTP_SNDINFO: {
 			struct sctp_sndinfo info;
 			if (parse_expression_to_sctp_sndinfo(cmsg_expr->cmsg_data, &info, error)) {
@@ -1224,7 +1228,7 @@ static int cmsg_new(struct expression *expression,
 			cmsg = (struct cmsghdr *) ((caddr_t)cmsg + CMSG_SPACE(sizeof(struct sctp_nxtinfo)));
 			break;
 #endif
-#if defined(SCTP_PRINFO)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 		case EXPR_SCTP_PRINFO: {
 			struct sctp_prinfo info;
 			if (parse_expression_to_sctp_prinfo(cmsg_expr->cmsg_data, &info, error)) {
@@ -1235,7 +1239,7 @@ static int cmsg_new(struct expression *expression,
 			break;
 		}
 #endif
-#if defined(SCTP_AUTHINFO)
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 		case EXPR_SCTP_AUTHINFO: {
 			struct sctp_authinfo info;
 			if (parse_expression_to_sctp_authinfo(cmsg_expr->cmsg_data, &info, error)) {
@@ -1343,7 +1347,7 @@ static int check_cmsghdr(struct expression *expr_list, struct msghdr *msg, char 
 				}
 				break;
 #endif
-#ifdef SCTP_RCVINFO
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 			case SCTP_RCVINFO:
 				if (check_sctp_rcvinfo(expr->cmsg_data->value.sctp_rcvinfo,
 						       (struct sctp_rcvinfo *) CMSG_DATA(cmsg_ptr),
@@ -1352,7 +1356,7 @@ static int check_cmsghdr(struct expression *expr_list, struct msghdr *msg, char 
 				}
 				break;
 #endif
-#ifdef SCTP_NXTINFO
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(HAVE_SCTP)) || defined(__SunOS_5_11) || (defined(linux) && defined(HAVE_SCTP_SENDV))
 			case SCTP_NXTINFO:
 				if (check_sctp_nxtinfo(expr->cmsg_data->value.sctp_nxtinfo,
 						       (struct sctp_nxtinfo *) CMSG_DATA(cmsg_ptr),
@@ -3358,6 +3362,39 @@ static int check_tcp_function_set(struct tcp_function_set_expr *expr,
 }
 #endif
 
+#ifdef __FreeBSD__
+static int check_tcp_fastopen(struct tcp_fastopen_expr *expr,
+			      struct tcp_fastopen *tcp_fastopen,
+			      char **error) {
+	unsigned int i;
+
+	if (check_s32_expr(expr->enable, tcp_fastopen->enable,
+	                   "tcp_fastopen.enable", error))
+		return STATUS_ERR;
+	if (expr->psk->type != EXPR_ELLIPSIS) {
+		if (strlen(expr->psk->value.string) != 2 * TCP_FASTOPEN_PSK_LEN) {
+			asprintf(error, "tcp_fastopen.psk: expected length: %zd, actual length: %d\n",
+			         strlen(expr->psk->value.string),
+			         TCP_FASTOPEN_PSK_LEN);
+			return STATUS_ERR;
+		}
+		for (i = 0; i < TCP_FASTOPEN_PSK_LEN; i++) {
+			char buf[3];
+
+			buf[0] = expr->psk->value.string[2 * i];
+			buf[1] = expr->psk->value.string[2 * i + 1];
+			buf[2] = '\0';
+			if (tcp_fastopen->psk[i] != (uint8_t)strtoul(buf, NULL, 16)) {
+				asprintf(error, "tcp_fastopen.psk[%u]: expected: 0x%s, actual: 0x%02x\n",
+					 i, buf, tcp_fastopen->psk[i]);
+				return STATUS_ERR;
+			}
+		}
+	}
+	return STATUS_OK;
+}
+#endif
+
 static int syscall_getsockopt(struct state *state, struct syscall_spec *syscall,
 			      struct expression_list *args, char **error)
 {
@@ -3702,6 +3739,16 @@ static int syscall_getsockopt(struct state *state, struct syscall_spec *syscall,
 		break;
 	}
 #endif
+#ifdef __FreeBSD__
+	case EXPR_TCP_FASTOPEN: {
+		struct tcp_fastopen *live_tcp_fastopen = malloc(sizeof(struct tcp_fastopen));
+
+		memset(live_tcp_fastopen, 0, sizeof(struct tcp_fastopen));
+		live_optval = live_tcp_fastopen;
+		live_optlen = (socklen_t)sizeof(struct tcp_fastopen);
+		break;
+	}
+#endif
 	case EXPR_LIST:
 		s32_bracketed_arg(args, 3, &script_optval, error);
 		live_optval = malloc(sizeof(int));
@@ -3864,6 +3911,11 @@ static int syscall_getsockopt(struct state *state, struct syscall_spec *syscall,
 		result = check_tcp_function_set(val_expression->value.tcp_function_set, live_optval, error);
 		break;
 #endif
+#ifdef __FreeBSD__
+	case EXPR_TCP_FASTOPEN:
+		result = check_tcp_fastopen(val_expression->value.tcp_fastopen, live_optval, error);
+		break;
+#endif
 	case EXPR_LIST:
 		if (*(int*)live_optval != script_optval) {
 			asprintf(error, "optval: expected: %d actual: %d",
@@ -3970,6 +4022,9 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 #endif
 #ifdef TCP_FUNCTION_BLK
 	struct tcp_function_set tcp_function_set;
+#endif
+#ifdef __FreeBSD__
+	struct tcp_fastopen tcp_fastopen;
 #endif
 
 	if (check_arg_count(args, 5, error))
@@ -4669,6 +4724,39 @@ static int syscall_setsockopt(struct state *state, struct syscall_spec *syscall,
 			optlen = (socklen_t)sizeof(struct tcp_function_set);
 		}
 		break;
+#endif
+#ifdef __FreeBSD__
+	case EXPR_TCP_FASTOPEN: {
+		unsigned int i, len;
+		const char *hexstring = val_expression->value.tcp_fastopen->psk->value.string;
+
+		memset(&tcp_fastopen, 0, sizeof(struct tcp_fastopen));
+		if (get_s32(val_expression->value.tcp_fastopen->enable,
+			    &tcp_fastopen.enable, error)) {
+			return STATUS_ERR;
+		}
+		if (check_type(val_expression->value.tcp_fastopen->psk, EXPR_HEX_WORD, error)) {
+			return STATUS_ERR;
+		}
+		len = (unsigned int)strlen(hexstring) / 2;
+		if (len > TCP_FASTOPEN_PSK_LEN) {
+			asprintf(error, "psk too long: %s", hexstring);
+			return STATUS_ERR;
+		}
+		for (i = 0; i < len; i ++) {
+			char buf[3];
+
+			buf[0] = hexstring[2 * i];
+			buf[1] = hexstring[2 * i + 1];
+			buf[2] = '\0';
+			tcp_fastopen.psk[i] = (uint8_t)strtoul(buf, NULL, 16);
+		}
+		optval = &tcp_fastopen;
+		if (!optlen_provided) {
+			optlen = (socklen_t)sizeof(struct tcp_fastopen);
+		}
+		break;
+	}
 #endif
 	default:
 		asprintf(error, "unsupported value type: %s",
@@ -6973,7 +7061,12 @@ static void invoke_system_call(
 
 error_out:
 	script_path = strdup(state->config->script_path);
-	state_free(state, 1);
+	/*
+	 * To free resources, we need to free the state. But this can only
+	 * be done from the main thread, but this is the syscall thread.
+	 *
+	 * So not calling state_free(state, 1);
+	 */
 	die("%s:%d: runtime error in %s call: %s\n",
 	    script_path, event->line_number,
 	    syscall->name, error);

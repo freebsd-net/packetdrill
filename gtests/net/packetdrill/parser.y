@@ -497,6 +497,7 @@ static struct tcp_option *new_tcp_exp_fast_open_option(const char *cookie_string
 	struct mpls mpls_stack_entry;
 	u16 port;
 	s32 window;
+	u16 urg_ptr;
 	u32 sequence_number;
 	struct {
 		u32 start_sequence;
@@ -564,7 +565,7 @@ static struct tcp_option *new_tcp_exp_fast_open_option(const char *cookie_string
 %token <reserved> SF_HDTR_HEADERS SF_HDTR_TRAILERS
 %token <reserved> FD EVENTS REVENTS ONOFF LINGER
 %token <reserved> ACK ECR EOL MSS NOP SACK NR_SACK SACKOK TIMESTAMP VAL WIN WSCALE PRO
-%token <reserved> EXP_FAST_OPEN FAST_OPEN
+%token <reserved> URG EXP_FAST_OPEN FAST_OPEN
 %token <reserved> IOV_BASE IOV_LEN
 %token <reserved> ECT0 ECT1 CE ECT01 NO_ECN
 %token <reserved> IPV4 IPV6 ICMP SCTP UDP UDPLITE GRE MTU
@@ -572,6 +573,7 @@ static struct tcp_option *new_tcp_exp_fast_open_option(const char *cookie_string
 %token <reserved> OPTION
 %token <reserved> AF_NAME AF_ARG
 %token <reserved> FUNCTION_SET_NAME PCBCNT
+%token <reserved> ENABLE PSK
 %token <reserved> SRTO_ASSOC_ID SRTO_INITIAL SRTO_MAX SRTO_MIN
 %token <reserved> SINIT_NUM_OSTREAMS SINIT_MAX_INSTREAMS SINIT_MAX_ATTEMPTS
 %token <reserved> SINIT_MAX_INIT_TIMEO
@@ -670,11 +672,12 @@ static struct tcp_option *new_tcp_exp_fast_open_option(const char *cookie_string
 %type <mpls_stack_entry> mpls_stack_entry
 %type <integer> opt_mpls_stack_bottom
 %type <integer> opt_icmp_mtu
-%type <string> icmp_type opt_icmp_code flags
+%type <string> icmp_type opt_icmp_code opt_ack_flag opt_word ack_and_ace flags
 %type <string> opt_tcp_fast_open_cookie tcp_fast_open_cookie
 %type <string> opt_note note word_list
 %type <string> option_flag option_value script
 %type <window> opt_window
+%type <urg_ptr> opt_urg_ptr
 %type <sequence_number> opt_ack
 %type <tcp_sequence_info> seq
 %type <transport_info> opt_icmp_echoed
@@ -689,6 +692,7 @@ static struct tcp_option *new_tcp_exp_fast_open_option(const char *cookie_string
 %type <expression> linger l_onoff l_linger
 %type <expression> accept_filter_arg af_name af_arg
 %type <expression> tcp_function_set function_set_name pcbcnt
+%type <expression> tcp_fastopen enable psk
 %type <udp_encaps_info> opt_udp_encaps_info
 %type <sctp_header_spec> sctp_header_spec
 %type <expression> sctp_assoc_id
@@ -1185,7 +1189,7 @@ chunk_type
 }
 | PAD {
 	$$ = SCTP_PAD_CHUNK_TYPE;
-} 
+}
 | RECONFIG {
 	$$ = SCTP_RECONFIG_CHUNK_TYPE;
 }
@@ -1905,7 +1909,7 @@ opt_sender_next_tsn
 	}
 	$$ = $3;
 }
-| SENDER_NEXT_TSN '=' HEX_INTEGER { 
+| SENDER_NEXT_TSN '=' HEX_INTEGER {
 	if (!is_valid_u32($3)) {
 		semantic_error("sender_next_tsn out of range");
 	}
@@ -1921,7 +1925,7 @@ opt_receiver_next_tsn
 	}
 	$$ = $3;
 }
-| RECEIVER_NEXT_TSN '=' HEX_INTEGER { 
+| RECEIVER_NEXT_TSN '=' HEX_INTEGER {
 	if (!is_valid_u32($3)) {
 		semantic_error("receiver_next_tsn out of range");
 	}
@@ -2418,13 +2422,13 @@ sctp_protocol_violation_cause_spec
 }
 
 tcp_packet_spec
-: packet_prefix opt_ip_info flags seq opt_ack opt_window opt_tcp_options opt_udp_encaps_info {
+: packet_prefix opt_ip_info flags seq opt_ack opt_window opt_urg_ptr opt_tcp_options opt_udp_encaps_info {
 	char *error = NULL;
 	struct packet *outer = $1, *inner = NULL;
 	enum direction_t direction = outer->direction;
 
-	if (($7 == NULL) && (direction != DIRECTION_OUTBOUND)) {
-		yylineno = @7.first_line;
+	if (($8 == NULL) && (direction != DIRECTION_OUTBOUND)) {
+		yylineno = @8.first_line;
 		semantic_error("<...> for TCP options can only be used with "
 			       "outbound packets");
 	}
@@ -2432,17 +2436,17 @@ tcp_packet_spec
 	inner = new_tcp_packet(in_config->wire_protocol,
 			       direction, $2, $3,
 			       $4.start_sequence, $4.payload_bytes,
-			       $5, $6, $7,
+			       $5, $6, $7, $8,
 			       ignore_ts_val,
 			       absolute_ts_ecr,
 			       $4.absolute,
 			       $4.ignore,
-			       $8.udp_src_port, $8.udp_dst_port,
+			       $9.udp_src_port, $9.udp_dst_port,
 			       &error);
 	ignore_ts_val = false;
 	absolute_ts_ecr = false;
 	free($3);
-	free($7);
+	free($8);
 	if (inner == NULL) {
 		assert(error != NULL);
 		semantic_error(error);
@@ -2677,10 +2681,34 @@ ip_ecn
 | CE		{ $$ = ECN_CE; }
 ;
 
+opt_ack_flag
+:		{
+ 	$$ = strdup("");
+}
+| '.'		{
+	$$ = strdup(".");
+}
+;
+
+opt_word
+:		{
+	$$ = strdup("");
+}
+| WORD		{
+	$$ = $1;
+}
+;
+
+ack_and_ace
+: FLOAT     {
+	$$ = strdup(yytext);
+}
+;
+
 flags
-: WORD         { $$ = $1; }
+: WORD opt_ack_flag    { asprintf(&($$), "%s%s", $1, $2); free($1); free($2); }
+| opt_word ack_and_ace { asprintf(&($$), "%s%s", $1, $2); free($1); free($2); }
 | '.'          { $$ = strdup("."); }
-| WORD '.'     { asprintf(&($$), "%s.", $1); free($1); }
 | '-'          { $$ = strdup(""); }  /* no TCP flags set in segment */
 ;
 
@@ -2746,6 +2774,16 @@ opt_window
 | WIN INTEGER	{
 	if (!is_valid_u16($2)) {
 		semantic_error("TCP window value out of range");
+	}
+	$$ = $2;
+}
+;
+
+opt_urg_ptr
+:		{ $$ = 0; }
+| URG INTEGER	{
+	if (!is_valid_u16($2)) {
+		semantic_error("urg_ptr value out of range");
 	}
 	$$ = $2;
 }
@@ -2979,6 +3017,9 @@ expression
 	$$ = $1;
 }
 | tcp_function_set  {
+	$$ = $1;
+}
+| tcp_fastopen      {
 	$$ = $1;
 }
 | sf_hdtr           {
@@ -3348,7 +3389,7 @@ accept_filter_arg
 	$$ = new_expression(EXPR_ACCEPT_FILTER_ARG);
 	$$->value.accept_filter_arg = calloc(1, sizeof(struct accept_filter_arg_expr));
 	$$->value.accept_filter_arg->af_name = $2;
-	$$->value.accept_filter_arg->af_arg = NULL;
+	$$->value.accept_filter_arg->af_arg = new_expression(EXPR_ELLIPSIS);
 #else
 	$$ = NULL;
 #endif
@@ -3400,6 +3441,48 @@ tcp_function_set
 }
 ;
 
+enable
+: ENABLE '=' INTEGER {
+	if (!is_valid_u32($3)) {
+		semantic_error("linger out of range");
+	}
+	$$ = new_integer_expression($3, "%lu");
+}
+| ENABLE '=' HEX_INTEGER {
+	if (!is_valid_u32($3)) {
+		semantic_error("linger out of range");
+	}
+	$$ = new_integer_expression($3, "%lu");
+}
+| ENABLE '=' ELLIPSIS {
+	$$ = new_expression(EXPR_ELLIPSIS);
+}
+;
+
+psk
+: PSK '=' WORD {
+	$$ = new_expression(EXPR_HEX_WORD);
+	$$->value.string = $3;
+}
+| PSK '=' ELLIPSIS {
+	$$ = new_expression(EXPR_ELLIPSIS);
+}
+;
+
+
+tcp_fastopen
+: '{' enable ',' psk '}' {
+#if defined(__FreeBSD__)
+	$$ = new_expression(EXPR_TCP_FASTOPEN);
+	$$->value.tcp_fastopen = calloc(1, sizeof(struct tcp_fastopen_expr));
+	$$->value.tcp_fastopen->enable = $2;
+	$$->value.tcp_fastopen->psk = $4;
+#else
+	$$ = NULL;
+#endif
+}
+;
+
 sf_hdtr
 : '{' SF_HDTR_HEADERS '(' decimal_integer ')' '=' array ','
       SF_HDTR_TRAILERS '('decimal_integer ')' '=' array '}' {
@@ -3422,7 +3505,7 @@ srto_initial
 	if (!is_valid_u32($3)){
 		semantic_error("srto_initial out of range");
 	}
-        $$ = new_integer_expression($3, "%u");
+	$$ = new_integer_expression($3, "%u");
 }
 | SRTO_INITIAL '=' ELLIPSIS { $$ = new_expression(EXPR_ELLIPSIS); }
 ;
@@ -3590,7 +3673,7 @@ sctp_authkeyid
 	$$->value.sctp_authkeyid->scact_assoc_id = $4;
 	$$->value.sctp_authkeyid->scact_keynumber = $6;
 }
-| '{' scact_keynumber '}'{ 
+| '{' scact_keynumber '}'{
 	$$ = new_expression(EXPR_SCTP_AUTHKEYID);
 	$$->value.sctp_authkeyid = calloc(1, sizeof(struct sctp_authkeyid_expr));
 	$$->value.sctp_authkeyid->scact_assoc_id = new_expression(EXPR_ELLIPSIS);
