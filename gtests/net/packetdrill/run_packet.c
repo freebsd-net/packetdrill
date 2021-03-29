@@ -694,7 +694,7 @@ static int map_inbound_sctp_packet(
 	assert(*error == NULL);
 	reflect_v_tag = false;
 	contains_init_chunk = false;
-	/* Map the TSNs and the initiate tags in the INIT and INIT-ACK chunk */
+	/* Map the TSNs and the initiate tags in the INIT and INIT_ACK chunk */
 	if ((live_packet->flags & FLAGS_SCTP_GENERIC_PACKET) == 0) {
 		for (chunk = sctp_chunks_begin(live_packet, &iter, error);
 		     chunk != NULL;
@@ -3118,7 +3118,8 @@ static int do_outbound_script_packet(
 		goto out;
 	}
 
-	if (socket->state == SOCKET_PASSIVE_PACKET_RECEIVED) {
+	if ((socket->state == SOCKET_PASSIVE_PACKET_RECEIVED) ||
+	    (socket->state == SOCKET_PASSIVE_COOKIE_ECHO_RECEIVED)) {
 		if (packet->tcp && packet->tcp->syn && packet->tcp->ack && !(packet->flags & FLAG_IGNORE_SEQ)) {
 			/* Script says we should see an outbound server SYNACK. */
 			socket->script.local_isn = ntohl(packet->tcp->seq);
@@ -3163,14 +3164,15 @@ static int do_outbound_script_packet(
 				asprintf(error, "Partial chunk for outbound packet");;
 				goto out;
 			}
-			if ((socket->state == SOCKET_PASSIVE_PACKET_RECEIVED) &&
+			if (((socket->state == SOCKET_PASSIVE_PACKET_RECEIVED) ||
+			     (socket->state == SOCKET_PASSIVE_COOKIE_ECHO_RECEIVED)) &&
 			    (chunk->type == SCTP_INIT_ACK_CHUNK_TYPE)) {
 				chunk_length = ntohs(chunk->length);
 				if (chunk_length < sizeof(struct _sctp_init_ack_chunk)) {
-					asprintf(error, "INIT chunk too short (length=%u)", chunk_length);
+					asprintf(error, "INIT_ACK chunk too short (length=%u)", chunk_length);
 					goto out;
 				}
-				parameters_length = chunk_length - sizeof(struct _sctp_init_chunk);
+				parameters_length = chunk_length - sizeof(struct _sctp_init_ack_chunk);
 				init_ack = (struct _sctp_init_ack_chunk *)chunk;
 
 				for (parameter = sctp_parameters_begin(init_ack->parameter,
@@ -3255,7 +3257,7 @@ static int do_outbound_script_packet(
 				}
 				socket->prepared_heartbeat_ack = heartbeat_ack;
 				socket->prepared_heartbeat_ack_length = chunk_length + padding_length;
-				DEBUGP("HEARTBEAT-ACK of length %u prepeared\n",
+				DEBUGP("HEARTBEAT_ACK of length %u prepeared\n",
 				       chunk_length);
 			}
 		}
